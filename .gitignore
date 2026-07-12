@@ -1,0 +1,32 @@
+# SafingData — .gitignore
+
+# Datos locales (sesión, config con contraseñas, etc.)
+data/config.json
+data/session.json
+data/keys/
+
+# Dependencias del pendrive (se instalan con setup_libs)
+libs/
+
+# Python embebido Windows
+python-embed/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
