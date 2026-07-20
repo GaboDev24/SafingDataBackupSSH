@@ -350,6 +350,6 @@ Este proyecto está bajo la licencia **MIT**. Ver el archivo [LICENSE](LICENSE) 
 
 <div align="center">
 
-*SafingData v1.0.0 — Diseñado para portabilidad y seguridad*
+*SafingData v1.0.0 — Diseñado por GaboDev - CEO DE SPIDERWEB*
 
 </div>
