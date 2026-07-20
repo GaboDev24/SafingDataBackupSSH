@@ -1,32 +1,68 @@
 # SafingData — .gitignore
 
-# Datos locales (sesión, config con contraseñas, etc.)
-data/config.json
-data/session.json
-data/keys/
+# ─────────────────────────────────────────────────────────────
+# DATOS LOCALES SENSIBLES (NUNCA subir a GitHub)
+# ─────────────────────────────────────────────────────────────
+data/config.json        # Contiene host, puerto y usuario SSH
+data/session.json       # Registro local de backups
+data/keys/              # Claves privadas SSH (si se añaden)
+data/*.json             # Cualquier JSON en data/ por seguridad
 
-# Dependencias del pendrive (se instalan con setup_libs)
+# ─────────────────────────────────────────────────────────────
+# DEPENDENCIAS (generadas por setup_libs — no pertenecen al repo)
+# ─────────────────────────────────────────────────────────────
 libs/
 
-# Python embebido Windows
+# ─────────────────────────────────────────────────────────────
+# PYTHON EMBEBIDO WINDOWS (pesado, se descarga por separado)
+# ─────────────────────────────────────────────────────────────
 python-embed/
 
-# Python cache
+# ─────────────────────────────────────────────────────────────
+# EJECUTABLES COMPILADOS
+# ─────────────────────────────────────────────────────────────
+*.exe
+*.bin
+dist/
+build/
+*.spec
+
+# ─────────────────────────────────────────────────────────────
+# PYTHON CACHE
+# ─────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 .Python
+*.pyc
 
-# Entornos virtuales
+# ─────────────────────────────────────────────────────────────
+# ENTORNOS VIRTUALES
+# ─────────────────────────────────────────────────────────────
 .venv/
 venv/
 env/
+.env
 
-# Logs
+# ─────────────────────────────────────────────────────────────
+# LOGS
+# ─────────────────────────────────────────────────────────────
 *.log
+logs/
 
-# OS
+# ─────────────────────────────────────────────────────────────
+# EDITORES / IDEs
+# ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─────────────────────────────────────────────────────────────
+# SISTEMA OPERATIVO
+# ─────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini

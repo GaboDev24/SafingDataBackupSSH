@@ -1,0 +1,9 @@
+{
+  "_comment": "Copia este archivo a data/config.json y completa los valores con los de tu servidor SSH.",
+  "host": "your.ssh.server.com",
+  "port": 22,
+  "user": "your_username",
+  "remote_base": "safingdata_backups",
+  "selected_paths": [],
+  "first_run": true
+}

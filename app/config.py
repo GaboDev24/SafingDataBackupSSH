@@ -16,10 +16,10 @@ DATA_DIR = BASE_DIR / "data"
 CONFIG_FILE = DATA_DIR / "config.json"
 
 DEFAULT_CONFIG: dict = {
-    "host": "190.220.229.45",
-    "port": 3025,
-    "user": "gabodev24",
-    "remote_base": "safingdata_backups",   # relativo al home del servidor
+    "host": "your.ssh.server.com",         # Reemplaza con la IP o dominio de tu servidor
+    "port": 22,                             # Puerto SSH (por defecto 22)
+    "user": "your_username",                # Tu usuario SSH en el servidor remoto
+    "remote_base": "safingdata_backups",   # Directorio remoto (relativo al home del servidor)
     "selected_paths": [],
     "first_run": True,
 }
