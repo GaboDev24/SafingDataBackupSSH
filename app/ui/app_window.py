@@ -26,6 +26,28 @@ from app.backup import SSHBackupClient
 
 VERSION = "1.1.0"
 
+try:
+    from PIL import Image, ImageTk
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
+
+def get_asset_path(filename: str) -> Path:
+    """Retorna la ruta absoluta de un archivo de asset (logo, icon, banner)."""
+    candidates = []
+    if getattr(sys, 'frozen', False):
+        if hasattr(sys, '_MEIPASS'):
+            candidates.append(Path(getattr(sys, '_MEIPASS')) / filename)
+        candidates.append(Path(sys.executable).parent / filename)
+    candidates.append(_APP_DIR / filename)
+    candidates.append(Path.cwd() / filename)
+
+    for p in candidates:
+        if p.exists():
+            return p
+    return candidates[0]
+
 
 class AppWindow:
     """Ventana principal de SafingData."""
@@ -46,11 +68,23 @@ class AppWindow:
         self._root.geometry("1100x760")
         self._root.resizable(True, True)
 
-        # Icono
-        try:
-            self._root.iconbitmap(default="")
-        except Exception:
-            pass
+        # Ocultar ventana principal durante la pantalla de bienvenida (splash)
+        self._root.withdraw()
+
+        # Icono ejecutable/ventana
+        icon_path = get_asset_path("icono.ico")
+        if icon_path.exists():
+            try:
+                self._root.iconbitmap(str(icon_path))
+            except Exception:
+                pass
+            try:
+                if HAS_PIL:
+                    ico_img = ImageTk.PhotoImage(Image.open(icon_path))
+                    self._root.iconphoto(True, ico_img)
+                    self._icon_ref = ico_img
+            except Exception:
+                pass
 
         # Estilo ttk
         self._style = ttk.Style()
@@ -65,6 +99,9 @@ class AppWindow:
         # Cargar selección previa
         if self._cfg.get("selected_paths"):
             self._root.after(300, lambda: self._file_selector.set_paths(self._cfg["selected_paths"]))
+
+        # Lanzar splash screen (banner.png) por 2 segundos
+        self._show_splash()
 
     # ──────────────────────────────────────────────────────────
     # Helper: máquina activa
@@ -101,6 +138,24 @@ class AppWindow:
             dot = tk.Canvas(dots_frame, width=10, height=10, bg=C["bg2"], highlightthickness=0)
             dot.create_oval(1, 1, 9, 9, fill=color, outline="")
             dot.pack(side="left", padx=2)
+
+        # ── Logo ────────────────────────────────────────────────
+        logo_path = get_asset_path("logo.png")
+        if logo_path.exists():
+            try:
+                if HAS_PIL:
+                    pil_logo = Image.open(logo_path)
+                    pil_logo = pil_logo.resize((30, 30), Image.Resampling.LANCZOS)
+                    self._header_logo_img = ImageTk.PhotoImage(pil_logo)
+                else:
+                    raw_logo = tk.PhotoImage(file=str(logo_path))
+                    sub = max(1, raw_logo.width() // 30)
+                    self._header_logo_img = raw_logo.subsample(sub, sub)
+
+                logo_lbl = tk.Label(inner, image=self._header_logo_img, bg=C["bg2"], bd=0)
+                logo_lbl.pack(side="left", padx=(0, 10))
+            except Exception as e:
+                print(f"Error cargando logo.png: {e}")
 
         # ── Título ──────────────────────────────────────────────
         tk.Label(
@@ -1478,6 +1533,97 @@ class AppWindow:
             self._srv_host_lbl.configure(text="••••••••••")
         if hasattr(self, "_srv_user_lbl"):
             self._srv_user_lbl.configure(text="••••••••••")
+
+    # ──────────────────────────────────────────────────────────
+    # Splash Screen (Banner de inicio)
+    # ──────────────────────────────────────────────────────────
+
+    def _show_splash(self) -> None:
+        """Muestra la ventana de bienvenida (banner.png) en medio de la pantalla por 2 segundos."""
+        banner_path = get_asset_path("banner.png")
+        if not banner_path.exists():
+            self._center_and_show_main()
+            return
+
+        splash = tk.Toplevel(self._root)
+        splash.overrideredirect(True)
+        splash.attributes("-topmost", True)
+        splash.configure(bg="#000000")
+
+        # Icono del splash window
+        icon_path = get_asset_path("icono.ico")
+        if icon_path.exists():
+            try:
+                splash.iconbitmap(str(icon_path))
+            except Exception:
+                pass
+
+        try:
+            sw = splash.winfo_screenwidth()
+            sh = splash.winfo_screenheight()
+
+            if HAS_PIL:
+                pil_banner = Image.open(banner_path)
+                w, h = pil_banner.size
+
+                # Si la pantalla es pequeña, escalar proporcionalmente
+                if w > sw * 0.85 or h > sh * 0.85:
+                    scale = min((sw * 0.85) / w, (sh * 0.85) / h)
+                    w, h = int(w * scale), int(h * scale)
+                    pil_banner = pil_banner.resize((w, h), Image.Resampling.LANCZOS)
+
+                self._splash_img = ImageTk.PhotoImage(pil_banner)
+            else:
+                raw_banner = tk.PhotoImage(file=str(banner_path))
+                w = raw_banner.width()
+                h = raw_banner.height()
+                self._splash_img = raw_banner
+
+            banner_lbl = tk.Label(
+                splash,
+                image=self._splash_img,
+                bg="#000000",
+                bd=0,
+                highlightthickness=0,
+            )
+            banner_lbl.pack()
+
+            # Posicionar en el centro exacto de la pantalla
+            x = max(0, (sw - w) // 2)
+            y = max(0, (sh - h) // 2)
+            splash.geometry(f"{w}x{h}+{x}+{y}")
+            splash.update()
+
+            def _finish_splash():
+                try:
+                    splash.destroy()
+                except Exception:
+                    pass
+                self._center_and_show_main()
+
+            # Ocultar splash y mostrar ventana principal tras 2000 ms (2 segundos)
+            self._root.after(2000, _finish_splash)
+
+        except Exception as e:
+            print(f"Error en splash screen: {e}")
+            try:
+                splash.destroy()
+            except Exception:
+                pass
+            self._center_and_show_main()
+
+    def _center_and_show_main(self) -> None:
+        """Centra la ventana principal en la pantalla y la hace visible."""
+        self._root.update_idletasks()
+        sw = self._root.winfo_screenwidth()
+        sh = self._root.winfo_screenheight()
+        w, h = 1100, 760
+        x = max(0, (sw - w) // 2)
+        y = max(0, (sh - h) // 2)
+        self._root.geometry(f"{w}x{h}+{x}+{y}")
+        self._root.deiconify()
+        self._root.lift()
+        self._root.focus_force()
 
     # ──────────────────────────────────────────────────────────
     # Ejecutar

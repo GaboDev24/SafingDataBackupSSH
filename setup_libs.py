@@ -43,6 +43,7 @@ def install_deps() -> bool:
         "cryptography>=41.0.0",
         "pynacl>=1.5.0",
         "cffi>=1.16.0",
+        "Pillow>=9.0.0",
     ]
 
     print(f"Instalando en: {LIBS_DIR}")

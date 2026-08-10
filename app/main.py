@@ -16,7 +16,7 @@ except ImportError:
 # Configurar paths
 # ────────────────────────────────────────────────────────────
 if getattr(sys, 'frozen', False):
-    BASE_DIR = Path(sys.executable).parent
+    BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(sys.executable).parent))
 else:
     BASE_DIR = Path(__file__).parent.parent
 LIBS_DIR = BASE_DIR / "libs"
