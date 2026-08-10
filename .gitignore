@@ -3,10 +3,11 @@
 # ─────────────────────────────────────────────────────────────
 # DATOS LOCALES SENSIBLES (NUNCA subir a GitHub)
 # ─────────────────────────────────────────────────────────────
-data/config.json        # Contiene host, puerto y usuario SSH
-data/session.json       # Registro local de backups
-data/keys/              # Claves privadas SSH (si se añaden)
-data/*.json             # Cualquier JSON en data/ por seguridad
+data/config.json       
+data/session.json      
+data/keys/              
+data/*.json             
+data/session.json
 
 # ─────────────────────────────────────────────────────────────
 # DEPENDENCIAS (generadas por setup_libs — no pertenecen al repo)
