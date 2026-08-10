@@ -35,6 +35,7 @@ class AppWindow:
         self._client = SSHBackupClient()
         self._backup_thread: Optional[threading.Thread] = None
         self._is_busy = False
+        self._is_connecting = False
         self._disk_info: dict = {"total": 0, "used": 0, "free": 0}
         self._remote_base_abs: str = ""
 
@@ -546,14 +547,23 @@ class AppWindow:
     # ──────────────────────────────────────────────────────────
 
     def _toggle_connection(self) -> None:
-        if self._client.connected:
+        if self._is_connecting:
+            self._cancel_connect()
+        elif self._client.connected:
             self._disconnect()
         else:
             self._prompt_connect()
 
+    def _cancel_connect(self) -> None:
+        """Aborta el intento de conexión en curso."""
+        self._is_connecting = False
+        self._client.disconnect()
+        self._set_ui_state("disconnected")
+        self._progress.log("Conexión cancelada por el usuario.", "warning")
+
     def _prompt_connect(self) -> None:
         """Solicita la contraseña y conecta usando la máquina activa."""
-        if self._is_busy:
+        if self._is_busy or self._is_connecting:
             return
 
         m = self._machine()
@@ -572,35 +582,49 @@ class AppWindow:
         if not pwd:
             return
 
+        self._is_connecting = True
         self._set_ui_state("connecting")
         self._progress.log(f"Conectando a [{alias}] {host}:{port}...", "cmd")
 
         def _do_connect() -> None:
             try:
                 self._client.connect(host, port, user, pwd)
+                if not self._is_connecting:
+                    self._client.disconnect()
+                    return
                 self._remote_base_abs = self._client.resolve_remote_base(remote)
+                if not self._is_connecting:
+                    self._client.disconnect()
+                    return
                 disk = self._client.get_disk_info()
+                if not self._is_connecting:
+                    self._client.disconnect()
+                    return
                 self._root.after(0, lambda: self._on_connected(disk))
             except Exception as exc:
-                self._root.after(0, lambda: self._on_connect_failed(str(exc)))
+                if self._is_connecting:
+                    self._root.after(0, lambda: self._on_connect_failed(str(exc)))
 
         t = threading.Thread(target=_do_connect, daemon=True)
         t.start()
 
     def _on_connected(self, disk: dict) -> None:
+        self._is_connecting = False
         self._disk_info = disk
         self._set_ui_state("connected")
         self._update_space_display()
         self._progress.log("Conexión establecida exitosamente.", "success")
         self._progress.log(f"Directorio remoto: {self._remote_base_abs}", "info")
-        self._refresh_backup_list()
+        self._sync_backup_list()
 
     def _on_connect_failed(self, error: str) -> None:
+        self._is_connecting = False
         self._set_ui_state("disconnected")
         self._progress.log(f"Error de conexión: {error}", "error")
         messagebox.showerror("Error de Conexión", f"No se pudo conectar:\n\n{error}", parent=self._root)
 
     def _disconnect(self) -> None:
+        self._is_connecting = False
         self._client.disconnect()
         self._set_ui_state("disconnected")
         self._progress.log("Desconectado del servidor.", "info")
@@ -614,7 +638,14 @@ class AppWindow:
         if state == "connecting":
             self._conn_dot.itemconfigure("dot", fill=C["yellow"])
             self._conn_lbl.configure(text="CONECTANDO...", fg=C["yellow"])
-            self._btn_conn.configure(text="...", state="disabled")
+            self._btn_conn.configure(
+                text="CANCELAR",
+                state="normal",
+                bg=C["bg4"],
+                fg=C["danger"],
+                activebackground=C["red_glow"],
+                activeforeground=C["danger"],
+            )
             self._btn_backup.configure(state="disabled")
             self._footer_status.configure(text="conectando...", fg=C["yellow"])
             self._pulse_canvas.itemconfigure("dot", fill=C["yellow"])
@@ -866,6 +897,28 @@ class AppWindow:
     # Gestión de backups guardados
     # ──────────────────────────────────────────────────────────
 
+    def _sync_backup_list(self) -> None:
+        """Sincroniza el registro local con los backups existentes en el servidor."""
+        try:
+            remote_ids = self._client.list_backups(self._remote_base_abs)
+            imported = sched.sync_from_server(remote_ids)
+            if imported > 0:
+                self._progress.log(
+                    f"Sincronizacion: {imported} backup(s) importado(s) del servidor.",
+                    "success",
+                )
+            else:
+                self._progress.log(
+                    "Registro local sincronizado con el servidor.", "info"
+                )
+        except Exception as exc:
+            self._progress.log(
+                f"Advertencia: no se pudo sincronizar la lista de backups: {exc}",
+                "warning",
+            )
+        finally:
+            self._refresh_backup_list()
+
     def _refresh_backup_list(self) -> None:
         """Actualiza la lista de backups en el panel derecho."""
         self._backup_tree.delete(*self._backup_tree.get_children())
@@ -877,13 +930,15 @@ class AppWindow:
             if b["deleted"]:
                 continue
             date_str = b["created_at"].strftime("%d/%m/%y %H:%M")
-            size_str = _fmt_size(b["size_bytes"])
+            size_str = _fmt_size(b["size_bytes"]) if b["size_bytes"] > 0 else "—"
+            estado = "IMPORTADO" if b.get("imported") else "GUARDADO"
+            tag = "warning" if b.get("imported") else "ok"
 
             self._backup_tree.insert(
                 "", "end",
                 iid=b["id"],
-                values=(b["id"], date_str, size_str, "GUARDADO"),
-                tags=("ok",),
+                values=(b["id"], date_str, size_str, estado),
+                tags=(tag,),
             )
 
     def _on_backup_selected(self, _event=None) -> None:
