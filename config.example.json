@@ -1,9 +1,22 @@
 {
-  "_comment": "Copia este archivo a data/config.json y completa los valores con los de tu servidor SSH.",
-  "host": "your.ssh.server.com",
-  "port": 22,
-  "user": "your_username",
-  "remote_base": "safingdata_backups",
+  "_comment": "Copia este archivo a data/config.json. Puedes definir varias máquinas SSH con nombres clave únicos.",
+  "machines": [
+    {
+      "name": "Servidor Principal",
+      "host": "your.ssh.server.com",
+      "port": 22,
+      "user": "your_username",
+      "remote_base": "safingdata_backups"
+    },
+    {
+      "name": "Backup Remoto",
+      "host": "backup.example.com",
+      "port": 22,
+      "user": "backup_user",
+      "remote_base": "safingdata_backups"
+    }
+  ],
+  "active_machine": "Servidor Principal",
   "selected_paths": [],
   "first_run": true
 }

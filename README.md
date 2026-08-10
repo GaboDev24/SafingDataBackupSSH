@@ -39,12 +39,16 @@ SafingData es una aplicación de escritorio portable (basada en Python + Tkinter
 
 - ✅ **100% portable** — corre desde pendrive, sin instalación
 - ✅ **Multiplataforma** — Windows y Linux (macOS con adaptaciones menores)
+- ✅ **Múltiples servidores SSH** — asigna un **nombre clave** (alias) a cada máquina y cambia de servidor al instante
+- ✅ **Protección de privacidad** — oculta por defecto el host y usuario en la interfaz (`••••••••••`) con botón **mostrar/ocultar**
+- ✅ **Puerto SSH opcional** — déjalo en blanco y usará automáticamente el puerto estándar `22`
+- ✅ **Prueba de conexión** — verifica el acceso SSH directamente desde la ventana de configuración
 - ✅ **Backup completo** via SSH/SFTP con `paramiko`
 - ✅ **Progreso en tiempo real** con barra de avance y ETA
 - ✅ **Gestión de backups** — listar, descargar y eliminar desde la interfaz
 - ✅ **Verificación de espacio** — reserva automática para el sistema operativo del servidor
 - ✅ **Cancelación segura** — limpia los archivos parciales en el servidor al cancelar
-- ✅ **Configuración persistente** — guarda tu servidor, puerto y usuario en `data/config.json`
+- ✅ **Configuración persistente** — guarda tus perfiles SSH en `data/config.json`
 - ✅ **Interfaz oscura** — diseño táctico de alta legibilidad
 
 ---
@@ -124,10 +128,12 @@ Antes de usar el programa, edita `data/config.json` (ver sección de [configurac
 
 ### Opción A — Desde la interfaz (recomendado)
 
-1. Abre el programa (ver [ejecutar](#ejecutar-el-programa))
+1. Abre el programa (ver [ejecutar](#-ejecutar-el-programa))
 2. Haz clic en el botón **⚙** (engranaje) en la barra superior
-3. Rellena los campos: **HOST**, **PUERTO**, **USUARIO**, **DIR REMOTO**
-4. Haz clic en **GUARDAR**
+3. Selecciona una máquina existente o haz clic en **+ Nueva** para crear un nuevo perfil con su **NOMBRE CLAVE**
+4. Rellena los campos: **NOMBRE CLAVE**, **HOST / IP**, **PUERTO** (opcional, por defecto 22), **USUARIO SSH**, **DIR. REMOTO**
+5. (Opcional) Haz clic en **Probar conexión** para validar el acceso sin guardar aún
+6. Haz clic en **GUARDAR**
 
 ### Opción B — Editar el archivo directamente
 
@@ -135,21 +141,37 @@ Crea o edita el archivo `data/config.json`:
 
 ```json
 {
-  "host": "192.168.1.100",
-  "port": 22,
-  "user": "mi_usuario",
-  "remote_base": "safingdata_backups",
+  "machines": [
+    {
+      "name": "Servidor Principal",
+      "host": "192.168.1.100",
+      "port": 22,
+      "user": "mi_usuario",
+      "remote_base": "safingdata_backups"
+    },
+    {
+      "name": "VPS Trabajo",
+      "host": "vps.ejemplo.com",
+      "port": 22,
+      "user": "ubuntu",
+      "remote_base": "safingdata_backups"
+    }
+  ],
+  "active_machine": "Servidor Principal",
   "selected_paths": []
 }
 ```
 
 | Campo | Descripción | Ejemplo |
 |-------|-------------|---------|
-| `host` | IP o dominio de tu servidor SSH | `192.168.1.100` o `backup.midominio.com` |
-| `port` | Puerto SSH del servidor (por defecto 22) | `22` |
-| `user` | Tu nombre de usuario en el servidor | `ubuntu`, `pi`, `root` |
-| `remote_base` | Carpeta donde se guardan los backups (relativa al home del usuario) | `safingdata_backups` |
-| `selected_paths` | Lista de rutas locales preseleccionadas (se rellena automáticamente desde la UI) | `[]` |
+| `name` | Nombre clave o alias descriptivo para la máquina | `"Servidor Casa"`, `"VPS Producción"` |
+| `host` | IP o dominio del servidor SSH | `"192.168.1.100"` o `"backup.midominio.com"` |
+| `port` | Puerto SSH del servidor (opcional, por defecto 22) | `22` |
+| `user` | Tu nombre de usuario en el servidor | `"ubuntu"`, `"pi"`, `"root"` |
+| `remote_base` | Carpeta donde se guardan los backups (relativa al home del usuario) | `"safingdata_backups"` |
+| `active_machine` | Nombre clave de la máquina actualmente activa | `"Servidor Principal"` |
+
+> ℹ️ Si abres el programa con un archivo `config.json` en el formato antiguo (versión 1.0), este **se migrará automáticamente** al nuevo formato multi-máquina.
 
 > ⚠️ **El archivo `data/config.json` está en `.gitignore`** y nunca se sube a GitHub. Tus credenciales de servidor están seguras.
 
@@ -350,6 +372,7 @@ Este proyecto está bajo la licencia **MIT**. Ver el archivo [LICENSE](LICENSE) 
 
 <div align="center">
 
-*SafingData v1.0.0 — Diseñado por GaboDev - CEO DE SPIDERWEB*
+*SafingData v1.1.0 — Diseñado por GaboDev - CEO DE SPIDERWEB*  
+[Ver Registro de Cambios (CHANGELOG.md)](CHANGELOG.md)
 
 </div>

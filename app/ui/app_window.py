@@ -24,7 +24,7 @@ import app.scheduler as sched
 import app.storage as storage_mod
 from app.backup import SSHBackupClient
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 class AppWindow:
@@ -64,6 +64,14 @@ class AppWindow:
         # Cargar selección previa
         if self._cfg.get("selected_paths"):
             self._root.after(300, lambda: self._file_selector.set_paths(self._cfg["selected_paths"]))
+
+    # ──────────────────────────────────────────────────────────
+    # Helper: máquina activa
+    # ──────────────────────────────────────────────────────────
+
+    def _machine(self) -> dict:
+        """Retorna el dict de la máquina SSH actualmente activa."""
+        return cfg_module.get_active_machine(self._cfg)
 
     # ──────────────────────────────────────────────────────────
     # Construcción de la UI
@@ -225,7 +233,8 @@ class AppWindow:
 
         # Log inicial
         self._progress.log("SafingData iniciado.", "info")
-        self._progress.log(f"Servidor: {self._cfg['host']}:{self._cfg['port']}", "info")
+        m = self._machine()
+        self._progress.log(f"Perfil activo: {m.get('name', '—')}", "info")
         self._progress.log("Conecta para comenzar.", "info")
 
     def _build_right_panel(self, parent: tk.Frame) -> None:
@@ -258,21 +267,56 @@ class AppWindow:
         inner = tk.Frame(card, bg=C["bg3"], padx=14, pady=10)
         inner.pack(fill="x")
 
-        tk.Label(inner, text="◈ SERVIDOR SSH", bg=C["bg3"], fg=C["red"], font=F["sm"]).pack(anchor="w")
+        # ── Encabezado con botón mostrar/ocultar ──────────────
+        header_row = tk.Frame(inner, bg=C["bg3"])
+        header_row.pack(fill="x")
+        tk.Label(
+            header_row, text="◈ SERVIDOR SSH",
+            bg=C["bg3"], fg=C["red"], font=F["sm"],
+        ).pack(side="left")
+
+        self._srv_revealed = False
+        self._srv_toggle_btn = tk.Button(
+            header_row, text="mostrar",
+            command=self._toggle_server_reveal,
+            bg=C["bg3"], fg=C["fg3"], font=F["xs"],
+            relief="flat", bd=0, padx=4, pady=0,
+            cursor="hand2",
+            activebackground=C["bg3"], activeforeground=C["fg2"],
+        )
+        self._srv_toggle_btn.pack(side="right")
 
         info_frame = tk.Frame(inner, bg=C["bg3"])
         info_frame.pack(fill="x", pady=(6, 0))
 
-        rows = [
-            ("HOST", self._cfg["host"]),
-            ("PUERTO", str(self._cfg["port"])),
-            ("USUARIO", self._cfg["user"]),
-        ]
-        for label, value in rows:
-            row = tk.Frame(info_frame, bg=C["bg3"])
-            row.pack(fill="x", pady=1)
-            tk.Label(row, text=f"{label:<8}", bg=C["bg3"], fg=C["fg3"], font=F["sm"]).pack(side="left")
-            tk.Label(row, text=value, bg=C["bg3"], fg=C["fg"], font=F["base"]).pack(side="left")
+        machine = self._machine()
+        alias = machine.get("name", "—")
+        host  = machine.get("host", "—")
+        user  = machine.get("user", "—")
+
+        # PERFIL — siempre visible, en rojo
+        row_p = tk.Frame(info_frame, bg=C["bg3"])
+        row_p.pack(fill="x", pady=1)
+        tk.Label(row_p, text=f"{'PERFIL':<8}", bg=C["bg3"], fg=C["fg3"], font=F["sm"]).pack(side="left")
+        self._srv_alias_lbl = tk.Label(row_p, text=alias, bg=C["bg3"], fg=C["red"], font=F["base"])
+        self._srv_alias_lbl.pack(side="left")
+
+        # HOST — enmascarado por defecto
+        row_h = tk.Frame(info_frame, bg=C["bg3"])
+        row_h.pack(fill="x", pady=1)
+        tk.Label(row_h, text=f"{'HOST':<8}", bg=C["bg3"], fg=C["fg3"], font=F["sm"]).pack(side="left")
+        self._srv_host_lbl = tk.Label(row_h, text="••••••••••", bg=C["bg3"], fg=C["fg2"], font=F["base"])
+        self._srv_host_lbl.pack(side="left")
+
+        # USUARIO — enmascarado por defecto
+        row_u = tk.Frame(info_frame, bg=C["bg3"])
+        row_u.pack(fill="x", pady=1)
+        tk.Label(row_u, text=f"{'USUARIO':<8}", bg=C["bg3"], fg=C["fg3"], font=F["sm"]).pack(side="left")
+        self._srv_user_lbl = tk.Label(row_u, text="••••••••••", bg=C["bg3"], fg=C["fg2"], font=F["base"])
+        self._srv_user_lbl.pack(side="left")
+
+        # Guardar valores reales para el toggle
+        self._srv_raw = {"host": host, "user": user}
 
         tk.Frame(card, bg=C["border"], height=1).pack(fill="x")
 
@@ -508,14 +552,20 @@ class AppWindow:
             self._prompt_connect()
 
     def _prompt_connect(self) -> None:
-        """Solicita la contraseña y conecta."""
+        """Solicita la contraseña y conecta usando la máquina activa."""
         if self._is_busy:
             return
 
-        # Diálogo simple de contraseña
+        m = self._machine()
+        host   = m.get("host", "")
+        port   = m.get("port", 22)
+        user   = m.get("user", "")
+        remote = m.get("remote_base", "safingdata_backups")
+        alias  = m.get("name", "—")
+
         pwd = simpledialog.askstring(
             "Autenticación SSH",
-            f"Contraseña para {self._cfg['user']}@{self._cfg['host']}:{self._cfg['port']}",
+            f"[{alias}]  {user}@{host}:{port}",
             show="*",
             parent=self._root,
         )
@@ -523,19 +573,12 @@ class AppWindow:
             return
 
         self._set_ui_state("connecting")
-        self._progress.log(f"Conectando a {self._cfg['host']}:{self._cfg['port']}...", "cmd")
+        self._progress.log(f"Conectando a [{alias}] {host}:{port}...", "cmd")
 
         def _do_connect() -> None:
             try:
-                self._client.connect(
-                    self._cfg["host"],
-                    self._cfg["port"],
-                    self._cfg["user"],
-                    pwd,
-                )
-                self._remote_base_abs = self._client.resolve_remote_base(
-                    self._cfg["remote_base"]
-                )
+                self._client.connect(host, port, user, pwd)
+                self._remote_base_abs = self._client.resolve_remote_base(remote)
                 disk = self._client.get_disk_info()
                 self._root.after(0, lambda: self._on_connected(disk))
             except Exception as exc:
@@ -1040,90 +1083,346 @@ class AppWindow:
         self._sel_size_var.set(_fmt_size(size))
 
     # ──────────────────────────────────────────────────────────
-    # Configuración
+    # Configuración — Gestor de máquinas SSH
     # ──────────────────────────────────────────────────────────
 
     def _open_settings(self) -> None:
-        """Abre el diálogo de configuración SSH."""
+        """Gestor de múltiples máquinas SSH con nombre clave."""
         dlg = tk.Toplevel(self._root)
-        dlg.title("Configuración SSH")
+        dlg.title("Gestión de máquinas SSH")
         dlg.configure(bg=C["bg"])
         dlg.resizable(False, False)
         dlg.grab_set()
 
-        # Centrar
-        dlg.geometry("420x320")
+        # ── Centrar ────────────────────────────────────────────
+        W, H = 500, 570
+        dlg.geometry(f"{W}x{H}")
         dlg.update_idletasks()
-        x = self._root.winfo_x() + (self._root.winfo_width() - 420) // 2
-        y = self._root.winfo_y() + (self._root.winfo_height() - 320) // 2
-        dlg.geometry(f"420x320+{x}+{y}")
+        x = self._root.winfo_x() + (self._root.winfo_width() - W) // 2
+        y = self._root.winfo_y() + (self._root.winfo_height() - H) // 2
+        dlg.geometry(f"{W}x{H}+{x}+{y}")
 
-        # Borde
-        tk.Frame(dlg, bg=C["border"], height=2).pack(fill="x")
-        header = tk.Frame(dlg, bg=C["bg2"], pady=10, padx=16)
+        # ── Cabecera ───────────────────────────────────────────
+        tk.Frame(dlg, bg=C["red"], height=2).pack(fill="x")
+        header = tk.Frame(dlg, bg=C["bg2"], pady=12, padx=18)
         header.pack(fill="x")
-        tk.Label(header, text="◈ CONFIGURACIÓN SSH", bg=C["bg2"], fg=C["red"], font=F["sm"]).pack(side="left")
+        tk.Label(
+            header, text="⚙  GESTIÓN DE MÁQUINAS SSH",
+            bg=C["bg2"], fg=C["red"], font=F["md"],
+        ).pack(side="left")
+        tk.Label(
+            header, text=f"v{VERSION}",
+            bg=C["bg2"], fg=C["fg3"], font=F["sm"],
+        ).pack(side="right")
         tk.Frame(dlg, bg=C["border"], height=1).pack(fill="x")
 
-        form = tk.Frame(dlg, bg=C["bg"], padx=20, pady=16)
+        # ── Selector de máquina ────────────────────────────────
+        sel_bar = tk.Frame(dlg, bg=C["bg3"], padx=18, pady=10)
+        sel_bar.pack(fill="x")
+        tk.Label(sel_bar, text="MÁQUINA:", bg=C["bg3"], fg=C["fg3"], font=F["sm"]).pack(side="left", padx=(0, 8))
+
+        machine_names = cfg_module.get_machine_names(self._cfg)
+        active_name = self._cfg.get("active_machine", machine_names[0] if machine_names else "")
+        selected_var = tk.StringVar(value=active_name)
+
+        machine_combo = ttk.Combobox(
+            sel_bar, textvariable=selected_var, values=machine_names,
+            state="readonly", font=F["base"], width=22,
+        )
+        machine_combo.pack(side="left", padx=(0, 10))
+
+        # Estado compartido del formulario
+        entries: dict[str, tk.Entry] = {}
+        port_ph: list[bool] = [False]   # [is_placeholder_active]
+
+        def _make_entry(parent, label_text, hint_text, value, is_port=False):
+            lbl_row = tk.Frame(parent, bg=C["bg"])
+            lbl_row.pack(fill="x", pady=(8, 1))
+            tk.Label(lbl_row, text=label_text, bg=C["bg"], fg=C["fg3"], font=F["sm"]).pack(side="left")
+            tk.Label(lbl_row, text=hint_text, bg=C["bg"], fg=C["fg_dim"], font=F["xs"]).pack(side="right")
+
+            border = tk.Frame(parent, bg=C["border"], padx=1, pady=1)
+            border.pack(fill="x")
+
+            e = tk.Entry(border, bg=C["bg_input"], fg=C["fg"],
+                         insertbackground=C["red"], relief="flat", bd=4, font=F["base"])
+
+            if is_port and (not value or value == "22"):
+                e.insert(0, "22")
+                e.configure(fg=C["fg3"])
+                port_ph[0] = True
+
+                def _fi(ev, en=e, b=border):
+                    if port_ph[0]:
+                        en.delete(0, "end")
+                        en.configure(fg=C["fg"])
+                        port_ph[0] = False
+                    b.configure(bg=C["red"])
+
+                def _fo(ev, en=e, b=border):
+                    if not en.get().strip():
+                        en.insert(0, "22")
+                        en.configure(fg=C["fg3"])
+                        port_ph[0] = True
+                    b.configure(bg=C["border"])
+
+                e.bind("<FocusIn>",  _fi)
+                e.bind("<FocusOut>", _fo)
+            else:
+                e.insert(0, value or "")
+                e.bind("<FocusIn>",  lambda ev, b=border: b.configure(bg=C["red"]))
+                e.bind("<FocusOut>", lambda ev, b=border: b.configure(bg=C["border"]))
+
+            e.pack(fill="x")
+            return e
+
+        # ── Formulario (dinámico) ──────────────────────────────
+        tk.Frame(dlg, bg=C["border"], height=1).pack(fill="x")
+        form = tk.Frame(dlg, bg=C["bg"], padx=20, pady=10)
         form.pack(fill="both", expand=True)
 
-        fields = [
-            ("HOST",    "host",         self._cfg["host"]),
-            ("PUERTO",  "port",         str(self._cfg["port"])),
-            ("USUARIO", "user",         self._cfg["user"]),
-            ("DIR REMOTO", "remote_base", self._cfg["remote_base"]),
-        ]
+        def _build_form(machine: dict) -> None:
+            for w in form.winfo_children():
+                w.destroy()
+            entries.clear()
+            port_ph[0] = False
+            port_val = machine.get("port", 22)
+            port_str = str(port_val) if port_val != 22 else ""
 
-        entries = {}
-        for label, key, default in fields:
-            row = tk.Frame(form, bg=C["bg"])
-            row.pack(fill="x", pady=4)
-            tk.Label(row, text=f"{label:<12}", bg=C["bg"], fg=C["fg3"], font=F["sm"]).pack(side="left")
-            e = tk.Entry(
-                row,
-                bg=C["bg_input"],
-                fg=C["fg"],
-                insertbackground=C["red"],
-                relief="flat",
-                bd=4,
-                font=F["base"],
+            entries["name"]        = _make_entry(form, "NOMBRE CLAVE", "Alias único (ej: Casa, Trabajo, VPS)", machine.get("name", ""))
+            entries["host"]        = _make_entry(form, "HOST / IP",    "Dirección o dominio del servidor SSH",  machine.get("host", ""))
+            entries["port"]        = _make_entry(form, "PUERTO",       "Opcional — vacío = 22",                port_str, is_port=True)
+            entries["user"]        = _make_entry(form, "USUARIO SSH",  "Nombre de usuario en el servidor",     machine.get("user", ""))
+            entries["remote_base"] = _make_entry(form, "DIR. REMOTO",  "Carpeta base de backups en el servidor", machine.get("remote_base", "safingdata_backups"))
+
+        def _get_values():
+            name   = entries["name"].get().strip()
+            host   = entries["host"].get().strip()
+            pr     = entries["port"].get().strip()
+            port   = 22 if (not pr or port_ph[0]) else (int(pr) if pr.isdigit() else 22)
+            user   = entries["user"].get().strip()
+            remote = entries["remote_base"].get().strip()
+            return name, host, port, user, remote
+
+        # ── Barra de estado ────────────────────────────────────
+        tk.Frame(dlg, bg=C["border"], height=1).pack(fill="x")
+        status_bar = tk.Frame(dlg, bg=C["bg3"], padx=18, pady=8)
+        status_bar.pack(fill="x")
+        status_dot = tk.Canvas(status_bar, width=8, height=8, bg=C["bg3"], highlightthickness=0)
+        status_dot.create_oval(1, 1, 7, 7, fill=C["fg3"], outline="", tags="dot")
+        status_dot.pack(side="left", padx=(0, 6))
+        status_lbl = tk.Label(status_bar, text="Sin verificar", bg=C["bg3"], fg=C["fg3"], font=F["sm"])
+        status_lbl.pack(side="left")
+
+        def _set_status(msg, color):
+            status_dot.itemconfigure("dot", fill=color)
+            status_lbl.configure(text=msg, fg=color)
+
+        def _validate() -> bool:
+            name, host, port, user, remote = _get_values()
+            if not name:
+                _set_status("NOMBRE CLAVE no puede estar vacío.", C["danger"])
+                entries["name"].focus_set(); return False
+            if not host:
+                _set_status("HOST no puede estar vacío.", C["danger"])
+                entries["host"].focus_set(); return False
+            pr = entries["port"].get().strip()
+            if pr and not port_ph[0] and not pr.isdigit():
+                _set_status("PUERTO debe ser un número (ej: 22).", C["danger"])
+                entries["port"].focus_set(); return False
+            if not user:
+                _set_status("USUARIO no puede estar vacío.", C["danger"])
+                entries["user"].focus_set(); return False
+            if not remote:
+                _set_status("DIR. REMOTO no puede estar vacío.", C["danger"])
+                entries["remote_base"].focus_set(); return False
+            return True
+
+        def _load_machine(name: str) -> None:
+            m = next((x for x in self._cfg.get("machines", []) if x.get("name") == name), None)
+            if m:
+                _build_form(m)
+                _set_status("Sin verificar", C["fg3"])
+
+        # Cargar máquina inicial
+        initial = next(
+            (m for m in self._cfg.get("machines", []) if m.get("name") == active_name),
+            self._cfg.get("machines", [{}])[0] if self._cfg.get("machines") else {},
+        )
+        _build_form(initial)
+
+        machine_combo.bind("<<ComboboxSelected>>", lambda e: _load_machine(selected_var.get()))
+
+        # ── Botón "+ Nueva" ────────────────────────────────────
+        def _new_machine() -> None:
+            new_name = simpledialog.askstring(
+                "Nueva máquina",
+                "Nombre clave para la nueva máquina SSH:\n(ej: Trabajo, VPS, Casa):",
+                parent=dlg,
             )
-            e.insert(0, default)
-            e.pack(side="left", fill="x", expand=True)
-            entries[key] = e
+            if not new_name or not new_name.strip():
+                return
+            new_name = new_name.strip()
+            if new_name in cfg_module.get_machine_names(self._cfg):
+                messagebox.showerror("Nombre duplicado", f"Ya existe '{new_name}'.", parent=dlg)
+                return
+            cfg_module.upsert_machine(self._cfg, {
+                "name": new_name, "host": "", "port": 22, "user": "", "remote_base": "safingdata_backups"
+            })
+            names = cfg_module.get_machine_names(self._cfg)
+            machine_combo["values"] = names
+            selected_var.set(new_name)
+            _load_machine(new_name)
 
+        tk.Button(
+            sel_bar, text="+ Nueva", command=_new_machine,
+            bg=C["bg4"], fg=C["blue"], font=F["sm"], relief="flat", bd=0,
+            padx=8, pady=4, cursor="hand2",
+            activebackground=C["bg3"], activeforeground=C["blue"],
+        ).pack(side="left")
+
+        # ── Acciones ───────────────────────────────────────────
+
+        def _test_connection() -> None:
+            if not _validate():
+                return
+            name, host, port, user, remote = _get_values()
+            pwd = simpledialog.askstring(
+                "Contraseña SSH",
+                f"[{name}]  {user}@{host}:{port}\n(solo para la prueba, no se guarda)",
+                show="*", parent=dlg,
+            )
+            if not pwd:
+                return
+            btn_test.configure(state="disabled", text="Probando...")
+            _set_status("Conectando...", C["yellow"])
+            dlg.update()
+
+            def _do_test():
+                import paramiko
+                try:
+                    c = paramiko.SSHClient()
+                    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    c.connect(hostname=host, port=port, username=user, password=pwd, timeout=8)
+                    c.close()
+                    dlg.after(0, lambda: (
+                        _set_status("✓  Conexión exitosa.", C["green"]),
+                        btn_test.configure(state="normal", text="Probar conexión"),
+                    ))
+                except Exception as exc:
+                    err = str(exc)
+                    dlg.after(0, lambda e=err: (
+                        _set_status(f"✗  {e[:52]}", C["danger"]),
+                        btn_test.configure(state="normal", text="Probar conexión"),
+                    ))
+
+            threading.Thread(target=_do_test, daemon=True).start()
+
+        def _delete_machine() -> None:
+            current = selected_var.get()
+            if len(self._cfg.get("machines", [])) <= 1:
+                messagebox.showerror("No se puede eliminar", "Debes tener al menos una máquina configurada.", parent=dlg)
+                return
+            if not messagebox.askyesno("Eliminar máquina", f"¿Eliminar '{current}'?\n\nEsta acción no se puede deshacer.", icon="warning", parent=dlg):
+                return
+            cfg_module.delete_machine(self._cfg, current)
+            cfg_module.save_config(self._cfg)
+            names = cfg_module.get_machine_names(self._cfg)
+            machine_combo["values"] = names
+            new_active = self._cfg.get("active_machine", names[0] if names else "")
+            selected_var.set(new_active)
+            _load_machine(new_active)
+            self._refresh_server_card()
+            self._progress.log(f"Máquina '{current}' eliminada.", "warning")
+
+        def _save() -> None:
+            if not _validate():
+                return
+            old_name = selected_var.get()
+            name, host, port, user, remote = _get_values()
+
+            if name != old_name and name in cfg_module.get_machine_names(self._cfg):
+                messagebox.showerror("Nombre duplicado", f"Ya existe '{name}'.", parent=dlg)
+                return
+
+            if name != old_name:
+                cfg_module.delete_machine(self._cfg, old_name)
+
+            cfg_module.upsert_machine(self._cfg, {"name": name, "host": host, "port": port, "user": user, "remote_base": remote})
+            cfg_module.set_active_machine(self._cfg, name)
+            cfg_module.save_config(self._cfg)
+
+            dlg.destroy()
+            self._refresh_server_card()
+            self._progress.log(f"Máquina '{name}' guardada y activada.", "success")
+            self._progress.log(f"Servidor: {host}:{port}  usuario: {user}", "info")
+            if self._client.connected:
+                self._disconnect()
+                self._progress.log("Desconectado — reconecta con el nuevo servidor.", "warning")
+
+        # ── Botones ────────────────────────────────────────────
         tk.Frame(dlg, bg=C["border"], height=1).pack(fill="x")
         btn_row = tk.Frame(dlg, bg=C["bg2"], pady=10, padx=16)
         btn_row.pack(fill="x")
 
-        def _save() -> None:
-            self._cfg["host"] = entries["host"].get().strip()
-            self._cfg["port"] = int(entries["port"].get().strip() or "22")
-            self._cfg["user"] = entries["user"].get().strip()
-            self._cfg["remote_base"] = entries["remote_base"].get().strip()
-            cfg_module.save_config(self._cfg)
-            dlg.destroy()
-            # Actualizar labels
-            self._progress.log("Configuración guardada.", "success")
+        btn_test = tk.Button(
+            btn_row, text="Probar conexión", command=_test_connection,
+            bg=C["bg4"], fg=C["blue"], font=F["base"], relief="flat", bd=0,
+            padx=12, pady=6, cursor="hand2",
+            activebackground=C["bg3"], activeforeground=C["blue"],
+        )
+        btn_test.pack(side="left")
 
         tk.Button(
-            btn_row, text="GUARDAR",
-            command=_save,
-            bg=C["red"], fg=C["fg"],
-            font=F["md"], relief="flat", bd=0,
-            padx=16, pady=6, cursor="hand2",
-            activebackground=C["red_hi"],
+            btn_row, text="✕ Eliminar", command=_delete_machine,
+            bg=C["bg4"], fg=C["danger"], font=F["base"], relief="flat", bd=0,
+            padx=10, pady=6, cursor="hand2",
+            activebackground=C["red_glow"], activeforeground=C["danger"],
+        ).pack(side="left", padx=(8, 0))
+
+        tk.Button(
+            btn_row, text="Cancelar", command=dlg.destroy,
+            bg=C["bg4"], fg=C["fg2"], font=F["base"], relief="flat", bd=0,
+            padx=12, pady=6, cursor="hand2", activebackground=C["bg3"],
+        ).pack(side="right", padx=(0, 8))
+
+        tk.Button(
+            btn_row, text="GUARDAR", command=_save,
+            bg=C["red"], fg=C["fg"], font=F["md"], relief="flat", bd=0,
+            padx=16, pady=6, cursor="hand2", activebackground=C["red_hi"],
         ).pack(side="right")
 
-        tk.Button(
-            btn_row, text="Cancelar",
-            command=dlg.destroy,
-            bg=C["bg4"], fg=C["fg2"],
-            font=F["base"], relief="flat", bd=0,
-            padx=12, pady=6, cursor="hand2",
-            activebackground=C["bg3"],
-        ).pack(side="right", padx=(0, 8))
+        dlg.bind("<Return>", lambda _: _save())
+        dlg.bind("<Escape>", lambda _: dlg.destroy())
+
+    def _toggle_server_reveal(self) -> None:
+        """Alterna la visibilidad de host y usuario en el panel de servidor."""
+        self._srv_revealed = not self._srv_revealed
+        if self._srv_revealed:
+            self._srv_toggle_btn.configure(text="ocultar", fg=C["red"])
+            self._srv_host_lbl.configure(text=self._srv_raw.get("host", "—"))
+            self._srv_user_lbl.configure(text=self._srv_raw.get("user", "—"))
+        else:
+            self._srv_toggle_btn.configure(text="mostrar", fg=C["fg3"])
+            self._srv_host_lbl.configure(text="••••••••••")
+            self._srv_user_lbl.configure(text="••••••••••")
+
+    def _refresh_server_card(self) -> None:
+        """Actualiza el panel de servidor con la máquina activa actual."""
+        machine = self._machine()
+        self._srv_raw = {"host": machine.get("host", "—"), "user": machine.get("user", "—")}
+
+        if hasattr(self, "_srv_alias_lbl"):
+            self._srv_alias_lbl.configure(text=machine.get("name", "—"))
+
+        # Resetear siempre a estado oculto
+        self._srv_revealed = False
+        if hasattr(self, "_srv_toggle_btn"):
+            self._srv_toggle_btn.configure(text="mostrar", fg=C["fg3"])
+        if hasattr(self, "_srv_host_lbl"):
+            self._srv_host_lbl.configure(text="••••••••••")
+        if hasattr(self, "_srv_user_lbl"):
+            self._srv_user_lbl.configure(text="••••••••••")
 
     # ──────────────────────────────────────────────────────────
     # Ejecutar
