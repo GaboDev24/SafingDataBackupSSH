@@ -1,6 +1,6 @@
 """
 SafingData — Motor de backup/restore SSH via SFTP (paramiko).
-Autenticación: contraseña únicamente.
+Autenticación: contraseña, clave SSH, o agente SSH (Tailscale SSH).
 Backup: completo (sin incremental).
 """
 
@@ -24,9 +24,24 @@ class SSHBackupClient:
     # Conexión
     # ──────────────────────────────────────────
 
-    def connect(self, host: str, port: int, user: str, password: str) -> None:
-        """Establece la conexión SSH con contraseña."""
+    def connect(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: Optional[str] = None,
+    ) -> None:
+        """
+        Establece la conexión SSH.
+
+        Si ``password`` es None o cadena vacía, se intenta autenticación
+        mediante agente SSH del sistema (Tailscale SSH) o claves privadas
+        del usuario (~/.ssh). Útil para redes Tailscale donde no se
+        requiere contraseña explícita.
+        """
         import paramiko
+
+        use_password = bool(password)
 
         self._client = paramiko.SSHClient()
         self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -34,10 +49,19 @@ class SSHBackupClient:
             host,
             port=port,
             username=user,
-            password=password,
+            password=password if use_password else None,
+            # Si no hay contraseña, intentar agente SSH y claves locales
+            allow_agent=not use_password,
+            look_for_keys=not use_password,
             timeout=30,
             banner_timeout=30,
         )
+
+        # Mantener la conexión viva para sesiones largas (p.ej. via Tailscale)
+        transport = self._client.get_transport()
+        if transport:
+            transport.set_keepalive(15)
+
         self._sftp = self._client.open_sftp()
         self.connected = True
         self._cancel_flag.clear()
@@ -68,10 +92,12 @@ class SSHBackupClient:
         """
         Obtiene información de disco del servidor.
         Retorna: {'total': bytes, 'used': bytes, 'free': bytes}
+
+        Usa ``df -P -k`` (formato POSIX, unidades en KB) para mayor
+        compatibilidad con BusyBox, macOS y distros Linux poco comunes.
         """
-        # Usamos df sobre el home del usuario para obtener info real
         _, stdout, _ = self._client.exec_command(
-            "df -B1 ~ 2>/dev/null | awk 'NR==2{print $2,$3,$4}'"
+            "df -P -k . 2>/dev/null | awk 'NR==2{print $2,$3,$4}'"
         )
         output = stdout.read().decode().strip()
         if not output:
@@ -80,18 +106,30 @@ class SSHBackupClient:
         if len(parts) < 3:
             return {"total": 0, "used": 0, "free": 0}
         try:
+            # df -k devuelve KB → convertir a bytes multiplicando por 1024
             return {
-                "total": int(parts[0]),
-                "used": int(parts[1]),
-                "free": int(parts[2]),
+                "total": int(parts[0]) * 1024,
+                "used":  int(parts[1]) * 1024,
+                "free":  int(parts[2]) * 1024,
             }
         except ValueError:
             return {"total": 0, "used": 0, "free": 0}
 
     def get_remote_home(self) -> str:
-        """Obtiene el directorio home real del usuario en el servidor."""
-        _, stdout, _ = self._client.exec_command("echo $HOME")
-        return stdout.read().decode().strip()
+        """
+        Obtiene el directorio home real del usuario en el servidor.
+
+        Usa ``sftp.normalize('.')`` (protocolo SFTP nativo) en lugar de
+        ``echo $HOME`` para evitar fallos con shells restrictivas o
+        servidores que no exporten la variable de entorno.
+        """
+        try:
+            return self._sftp.normalize(".")
+        except Exception:
+            # Fallback: intentar con el comando shell
+            _, stdout, _ = self._client.exec_command("echo $HOME")
+            result = stdout.read().decode().strip()
+            return result or "/"
 
     def resolve_remote_base(self, remote_base: str) -> str:
         """Convierte remote_base relativo al home en path absoluto."""

@@ -617,7 +617,12 @@ class AppWindow:
         self._progress.log("Conexión cancelada por el usuario.", "warning")
 
     def _prompt_connect(self) -> None:
-        """Solicita la contraseña y conecta usando la máquina activa."""
+        """Solicita la contraseña y conecta usando la máquina activa.
+        
+        Si el usuario deja la contraseña en blanco, se intenta autenticación
+        sin contraseña (agente SSH / Tailscale SSH / clave privada).
+        Si cancela el diálogo, se aborta la conexión.
+        """
         if self._is_busy or self._is_connecting:
             return
 
@@ -630,20 +635,26 @@ class AppWindow:
 
         pwd = simpledialog.askstring(
             "Autenticación SSH",
-            f"[{alias}]  {user}@{host}:{port}",
+            f"[{alias}]  {user}@{host}:{port}\n\n"
+            f"Contraseña SSH (déjala en blanco para usar\n"
+            f"Tailscale SSH / clave privada / agente SSH):",
             show="*",
             parent=self._root,
         )
-        if not pwd:
+        # None = usuario canceló el diálogo → no conectar
+        if pwd is None:
             return
+        # Cadena vacía = autenticación sin contraseña (Tailscale / Keys)
+        password = pwd if pwd else None
 
+        auth_mode = "Tailscale/Clave" if password is None else "contraseña"
         self._is_connecting = True
         self._set_ui_state("connecting")
-        self._progress.log(f"Conectando a [{alias}] {host}:{port}...", "cmd")
+        self._progress.log(f"Conectando a [{alias}] {host}:{port} ({auth_mode})...", "cmd")
 
         def _do_connect() -> None:
             try:
-                self._client.connect(host, port, user, pwd)
+                self._client.connect(host, port, user, password)
                 if not self._is_connecting:
                     self._client.disconnect()
                     return
