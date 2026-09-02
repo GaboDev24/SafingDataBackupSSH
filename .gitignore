@@ -8,6 +8,7 @@ data/session.json
 data/keys/              
 data/*.json             
 data/session.json
+data/logs/
 
 # ─────────────────────────────────────────────────────────────
 # DEPENDENCIAS (generadas por setup_libs — no pertenecen al repo)

@@ -5,6 +5,7 @@ Backup: completo (sin incremental).
 """
 
 import os
+import shlex
 import stat
 import threading
 from pathlib import Path, PurePosixPath
@@ -44,7 +45,13 @@ class SSHBackupClient:
         use_password = bool(password)
 
         self._client = paramiko.SSHClient()
-        self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # SEGURIDAD: WarningPolicy registra un aviso si la clave del host no está
+        # en el known_hosts local, pero no bloquea la conexión. Es más seguro que
+        # AutoAddPolicy (que acepta cualquier clave sin advertencia alguna).
+        # Para máxima seguridad en entornos de producción, usa RejectPolicy y
+        # carga las claves del servidor con load_host_keys() antes de conectar.
+        self._client.load_system_host_keys()
+        self._client.set_missing_host_key_policy(paramiko.WarningPolicy())
         self._client.connect(
             host,
             port=port,
@@ -158,7 +165,10 @@ class SSHBackupClient:
 
     def _ensure_dir(self, remote_path: str) -> None:
         """Crea directorios remotos recursivamente (equivalente a mkdir -p)."""
-        self._client.exec_command(f"mkdir -p '{remote_path}'")
+        # SEGURIDAD: shlex.quote escapa la ruta para prevenir inyección de comandos
+        # si el path contiene caracteres especiales como comillas simples, punto y
+        # coma, o backticks que podrían ejecutar comandos arbitrarios en el servidor.
+        self._client.exec_command(f"mkdir -p {shlex.quote(remote_path)}")
         # Esperamos que se complete
         import time
         time.sleep(0.05)
@@ -270,15 +280,22 @@ class SSHBackupClient:
         for entry in entries:
             if self._cancel_flag.is_set():
                 raise InterruptedError("Descarga cancelada por el usuario.")
+
+            # SEGURIDAD: Path(entry.filename).name extrae solo el componente final
+            # del nombre. Esto previene ataques de Path Traversal donde un servidor
+            # SFTP malicioso devuelve nombres como "../../../etc/passwd" para
+            # sobrescribir archivos fuera del directorio de destino.
+            safe_name = Path(entry.filename).name
+            if not safe_name or safe_name in (".", ".."):
+                continue
+
             remote_item = str(PurePosixPath(remote_dir) / entry.filename)
-            local_item = local_dir / entry.filename
+            local_item = local_dir / safe_name
 
             if stat.S_ISDIR(entry.st_mode):
                 self._download_dir(remote_item, local_item, progress_cb)
             else:
-                size = entry.st_size
-
-                def _cb(transferred: int, total: int, fn: str = entry.filename) -> None:
+                def _cb(transferred: int, total: int, fn: str = safe_name) -> None:
                     if self._cancel_flag.is_set():
                         raise InterruptedError("Descarga cancelada.")
                     if progress_cb:

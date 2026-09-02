@@ -23,6 +23,9 @@ LIBS_DIR = BASE_DIR / "libs"
 
 # Insertar libs/ al frente del path para que paramiko y deps
 # del pendrive tengan prioridad sobre el sistema
+# SEGURIDAD: Esto significa que cualquier archivo .py en libs/ se carga
+# con prioridad máxima. Asegúrate de que el pendrive/directorio provenga
+# de una fuente de confianza y no haya sido modificado por terceros.
 if LIBS_DIR.exists():
     sys.path.insert(0, str(LIBS_DIR))
 

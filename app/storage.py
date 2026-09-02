@@ -25,7 +25,9 @@ def get_local_size(paths: List[str]) -> int:
                 pass
         elif path.is_dir():
             for f in path.rglob("*"):
-                if f.is_file():
+                # BUGFIX: Ignorar symlinks para evitar bucles infinitos si un enlace
+                # apunta a un directorio padre, y evitar contar archivos duplicados.
+                if f.is_file() and not f.is_symlink():
                     try:
                         total += f.stat().st_size
                     except OSError:
@@ -43,7 +45,8 @@ def count_local_files(paths: List[str]) -> int:
         if path.is_file():
             count += 1
         elif path.is_dir():
-            count += sum(1 for f in path.rglob("*") if f.is_file())
+            # BUGFIX: Ignorar symlinks para evitar bucles infinitos y conteos duplicados.
+            count += sum(1 for f in path.rglob("*") if f.is_file() and not f.is_symlink())
     return count
 
 
