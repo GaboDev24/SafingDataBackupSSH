@@ -371,6 +371,17 @@ class AppWindow:
         self._srv_user_lbl = tk.Label(row_u, text="••••••••••", bg=C["bg3"], fg=C["fg2"], font=F["base"])
         self._srv_user_lbl.pack(side="left")
 
+        # JUMP HOST badge — visible solo si está configurado
+        jump_host = machine.get("jump_host", "")
+        self._srv_jump_row = tk.Frame(info_frame, bg=C["bg3"])
+        self._srv_jump_row.pack(fill="x", pady=(4, 0))
+        self._srv_jump_lbl = tk.Label(
+            self._srv_jump_row,
+            text=f"⇶ VIA JUMP HOST: {jump_host}" if jump_host else "",
+            bg=C["bg3"], fg=C["yellow"], font=F["sm"],
+        )
+        self._srv_jump_lbl.pack(side="left")
+
         # Guardar valores reales para el toggle
         self._srv_raw = {"host": host, "user": user}
 
@@ -627,11 +638,13 @@ class AppWindow:
             return
 
         m = self._machine()
-        host   = m.get("host", "")
-        port   = m.get("port", 22)
-        user   = m.get("user", "")
-        remote = m.get("remote_base", "safingdata_backups")
-        alias  = m.get("name", "—")
+        host      = m.get("host", "")
+        port      = m.get("port", 22)
+        user      = m.get("user", "")
+        remote    = m.get("remote_base", "safingdata_backups")
+        alias     = m.get("name", "—")
+        jump_host = m.get("jump_host", "") or None
+        jump_user = m.get("jump_user", "") or None
 
         pwd = simpledialog.askstring(
             "Autenticación SSH",
@@ -648,13 +661,15 @@ class AppWindow:
         password = pwd if pwd else None
 
         auth_mode = "Tailscale/Clave" if password is None else "contraseña"
+        jump_info = f" via Jump:{jump_host}" if jump_host else ""
         self._is_connecting = True
         self._set_ui_state("connecting")
-        self._progress.log(f"Conectando a [{alias}] {host}:{port} ({auth_mode})...", "cmd")
+        self._progress.log(f"Conectando a [{alias}] {host}:{port} ({auth_mode}{jump_info})...", "cmd")
 
         def _do_connect() -> None:
             try:
-                self._client.connect(host, port, user, password)
+                self._client.connect(host, port, user, password,
+                                     jump_host=jump_host, jump_user=jump_user)
                 if not self._is_connecting:
                     self._client.disconnect()
                     return
@@ -1315,15 +1330,28 @@ class AppWindow:
             entries["port"]        = _make_entry(form, "PUERTO",       "Opcional — vacío = 22",                port_str, is_port=True)
             entries["user"]        = _make_entry(form, "USUARIO SSH",  "Nombre de usuario en el servidor",     machine.get("user", ""))
             entries["remote_base"] = _make_entry(form, "DIR. REMOTO",  "Carpeta base de backups en el servidor", machine.get("remote_base", "safingdata_backups"))
+            # ── Separador sección Jump Host ──────────────────────────
+            sep_frame = tk.Frame(form, bg=C["bg"])
+            sep_frame.pack(fill="x", pady=(12, 0))
+            tk.Label(
+                sep_frame,
+                text="⇶ JUMP HOST (opcional — para Tailscale sin cliente instalado)",
+                bg=C["bg"], fg=C["yellow"], font=F["sm"],
+            ).pack(side="left")
+            tk.Frame(form, bg=C["border"], height=1).pack(fill="x", pady=(4, 0))
+            entries["jump_host"] = _make_entry(form, "JUMP HOST",  "Host/IP del bastión con Tailscale (ej: bastion.mi.com)", machine.get("jump_host", ""))
+            entries["jump_user"] = _make_entry(form, "JUMP USER",  "Usuario SSH en el bastión (vacío = mismo usuario)",      machine.get("jump_user", ""))
 
         def _get_values():
-            name   = entries["name"].get().strip()
-            host   = entries["host"].get().strip()
-            pr     = entries["port"].get().strip()
-            port   = 22 if (not pr or port_ph[0]) else (int(pr) if pr.isdigit() else 22)
-            user   = entries["user"].get().strip()
-            remote = entries["remote_base"].get().strip()
-            return name, host, port, user, remote
+            name      = entries["name"].get().strip()
+            host      = entries["host"].get().strip()
+            pr        = entries["port"].get().strip()
+            port      = 22 if (not pr or port_ph[0]) else (int(pr) if pr.isdigit() else 22)
+            user      = entries["user"].get().strip()
+            remote    = entries["remote_base"].get().strip()
+            jump_host = entries["jump_host"].get().strip() if "jump_host" in entries else ""
+            jump_user = entries["jump_user"].get().strip() if "jump_user" in entries else ""
+            return name, host, port, user, remote, jump_host, jump_user
 
         # ── Barra de estado ────────────────────────────────────
         tk.Frame(dlg, bg=C["border"], height=1).pack(fill="x")
@@ -1340,7 +1368,7 @@ class AppWindow:
             status_lbl.configure(text=msg, fg=color)
 
         def _validate() -> bool:
-            name, host, port, user, remote = _get_values()
+            name, host, port, user, remote, jump_host, jump_user = _get_values()
             if not name:
                 _set_status("NOMBRE CLAVE no puede estar vacío.", C["danger"])
                 entries["name"].focus_set(); return False
@@ -1388,7 +1416,8 @@ class AppWindow:
                 messagebox.showerror("Nombre duplicado", f"Ya existe '{new_name}'.", parent=dlg)
                 return
             cfg_module.upsert_machine(self._cfg, {
-                "name": new_name, "host": "", "port": 22, "user": "", "remote_base": "safingdata_backups"
+                "name": new_name, "host": "", "port": 22, "user": "",
+                "remote_base": "safingdata_backups", "jump_host": "", "jump_user": "",
             })
             names = cfg_module.get_machine_names(self._cfg)
             machine_combo["values"] = names
@@ -1407,7 +1436,7 @@ class AppWindow:
         def _test_connection() -> None:
             if not _validate():
                 return
-            name, host, port, user, remote = _get_values()
+            name, host, port, user, remote, jump_host, jump_user = _get_values()
             pwd = simpledialog.askstring(
                 "Contraseña SSH",
                 f"[{name}]  {user}@{host}:{port}\n(solo para la prueba, no se guarda)",
@@ -1424,10 +1453,22 @@ class AppWindow:
                 try:
                     c = paramiko.SSHClient()
                     c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    c.connect(hostname=host, port=port, username=user, password=pwd, timeout=8)
+                    sock = None
+                    if jump_host:
+                        import paramiko as _pm
+                        _jump_u = jump_user or user
+                        proxy_cmd = (
+                            f"ssh -o StrictHostKeyChecking=no "
+                            f"-o UserKnownHostsFile=/dev/null "
+                            f"-W {host}:{port} "
+                            f"{_jump_u}@{jump_host}"
+                        )
+                        sock = _pm.ProxyCommand(proxy_cmd)
+                    c.connect(hostname=host, port=port, username=user, password=pwd, timeout=8, sock=sock)
                     c.close()
-                    dlg.after(0, lambda: (
-                        _set_status("✓  Conexión exitosa.", C["green"]),
+                    msg = "✓  Conexión exitosa." + (f" (via {jump_host})" if jump_host else "")
+                    dlg.after(0, lambda m=msg: (
+                        _set_status(m, C["green"]),
                         btn_test.configure(state="normal", text="Probar conexión"),
                     ))
                 except Exception as exc:
@@ -1460,7 +1501,7 @@ class AppWindow:
             if not _validate():
                 return
             old_name = selected_var.get()
-            name, host, port, user, remote = _get_values()
+            name, host, port, user, remote, jump_host, jump_user = _get_values()
 
             if name != old_name and name in cfg_module.get_machine_names(self._cfg):
                 messagebox.showerror("Nombre duplicado", f"Ya existe '{name}'.", parent=dlg)
@@ -1469,7 +1510,10 @@ class AppWindow:
             if name != old_name:
                 cfg_module.delete_machine(self._cfg, old_name)
 
-            cfg_module.upsert_machine(self._cfg, {"name": name, "host": host, "port": port, "user": user, "remote_base": remote})
+            cfg_module.upsert_machine(self._cfg, {
+                "name": name, "host": host, "port": port, "user": user,
+                "remote_base": remote, "jump_host": jump_host, "jump_user": jump_user,
+            })
             cfg_module.set_active_machine(self._cfg, name)
             cfg_module.save_config(self._cfg)
 
@@ -1477,6 +1521,8 @@ class AppWindow:
             self._refresh_server_card()
             self._progress.log(f"Máquina '{name}' guardada y activada.", "success")
             self._progress.log(f"Servidor: {host}:{port}  usuario: {user}", "info")
+            if jump_host:
+                self._progress.log(f"Jump Host: {jump_host}", "info")
             if self._client.connected:
                 self._disconnect()
                 self._progress.log("Desconectado — reconecta con el nuevo servidor.", "warning")
@@ -1544,6 +1590,11 @@ class AppWindow:
             self._srv_host_lbl.configure(text="••••••••••")
         if hasattr(self, "_srv_user_lbl"):
             self._srv_user_lbl.configure(text="••••••••••")
+
+        # Actualizar badge de Jump Host
+        if hasattr(self, "_srv_jump_lbl"):
+            jh = machine.get("jump_host", "")
+            self._srv_jump_lbl.configure(text=f"⇶ VIA JUMP HOST: {jh}" if jh else "")
 
     # ──────────────────────────────────────────────────────────
     # Splash Screen (Banner de inicio)

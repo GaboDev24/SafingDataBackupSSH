@@ -1,6 +1,8 @@
 """
 SafingData — Motor de backup/restore SSH via SFTP (paramiko).
 Autenticación: contraseña, clave SSH, o agente SSH (Tailscale SSH).
+Jump Host: soporta conexión a servidores en redes Tailscale sin tener el cliente
+           instalado, usando un bastión intermedio via SSH ProxyCommand.
 Backup: completo (sin incremental).
 """
 
@@ -31,9 +33,17 @@ class SSHBackupClient:
         port: int,
         user: str,
         password: Optional[str] = None,
+        jump_host: Optional[str] = None,
+        jump_user: Optional[str] = None,
     ) -> None:
         """
-        Establece la conexión SSH.
+        Establece la conexión SSH, con soporte opcional de Jump Host.
+
+        Si ``jump_host`` está definido, la conexión se realiza en dos saltos:
+          1. Se abre un túnel SSH hasta el bastión (``jump_host``).
+          2. A través de ese túnel, se conecta al servidor destino (``host``).
+        Esto permite llegar a nodos de una red Tailscale sin tener el cliente
+        de Tailscale instalado en la máquina local.
 
         Si ``password`` es None o cadena vacía, se intenta autenticación
         mediante agente SSH del sistema (Tailscale SSH) o claves privadas
@@ -43,6 +53,23 @@ class SSHBackupClient:
         import paramiko
 
         use_password = bool(password)
+
+        # ── Jump Host (ProxyCommand) ──────────────────────────────
+        # Si se configura un bastión, construimos un socket de transporte
+        # que "pasa" a través de él usando paramiko.ProxyCommand con el
+        # comando nativo `ssh -W` (open_channel directo TCP al host destino).
+        sock = None
+        if jump_host:
+            _jump_user = jump_user or user
+            # El comando que el bastión ejecuta para establecer el canal TCP:
+            # ssh -W <host>:<port> abre un canal raw hacia el destino final.
+            proxy_cmd = (
+                f"ssh -o StrictHostKeyChecking=no "
+                f"-o UserKnownHostsFile=/dev/null "
+                f"-W {host}:{port} "
+                f"{_jump_user}@{jump_host}"
+            )
+            sock = paramiko.ProxyCommand(proxy_cmd)
 
         self._client = paramiko.SSHClient()
         # SEGURIDAD: WarningPolicy registra un aviso si la clave del host no está
@@ -62,6 +89,8 @@ class SSHBackupClient:
             look_for_keys=not use_password,
             timeout=30,
             banner_timeout=30,
+            # sock=None → conexión directa; sock=ProxyCommand → via bastión
+            sock=sock,
         )
 
         # Mantener la conexión viva para sesiones largas (p.ej. via Tailscale)

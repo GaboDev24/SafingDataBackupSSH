@@ -22,6 +22,11 @@ _DEFAULT_MACHINE: dict = {
     "port": 22,
     "user": "your_username",
     "remote_base": "safingdata_backups",
+    # Campos opcionales para Jump Host (conexión a Tailscale sin cliente instalado).
+    # Si jump_host está vacío, se conecta directamente al servidor.
+    # Si está definido, la conexión pasa por el bastión: cliente → jump_host → host.
+    "jump_host": "",
+    "jump_user": "",
 }
 
 DEFAULT_CONFIG: dict = {
@@ -43,9 +48,16 @@ def _migrate_old_format(data: dict) -> dict:
             "port": data.pop("port", _DEFAULT_MACHINE["port"]),
             "user": data.pop("user", _DEFAULT_MACHINE["user"]),
             "remote_base": data.pop("remote_base", _DEFAULT_MACHINE["remote_base"]),
+            "jump_host": "",
+            "jump_user": "",
         }
         data["machines"] = [machine]
         data.setdefault("active_machine", machine["name"])
+    else:
+        # Migración hacia adelante: asegurar que máquinas existentes tengan los campos nuevos
+        for m in data["machines"]:
+            m.setdefault("jump_host", "")
+            m.setdefault("jump_user", "")
     return data
 
 

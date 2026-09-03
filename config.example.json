@@ -6,14 +6,19 @@
       "host": "your.ssh.server.com",
       "port": 22,
       "user": "your_username",
-      "remote_base": "safingdata_backups"
+      "remote_base": "safingdata_backups",
+      "_comment_jump": "Opcional: Jump Host para redes Tailscale sin cliente instalado. Dejar vacío para conexión directa.",
+      "jump_host": "",
+      "jump_user": ""
     },
     {
-      "name": "Backup Remoto",
-      "host": "backup.example.com",
+      "name": "VPS via Tailscale (ejemplo con Jump Host)",
+      "host": "100.1.2.3",
       "port": 22,
-      "user": "backup_user",
-      "remote_base": "safingdata_backups"
+      "user": "ubuntu",
+      "remote_base": "safingdata_backups",
+      "jump_host": "bastion.mi-dominio.com",
+      "jump_user": "bastion_user"
     }
   ],
   "active_machine": "Servidor Principal",

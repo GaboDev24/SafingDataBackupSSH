@@ -4,9 +4,35 @@ Todos los cambios notables en este proyecto seran documentados en este archivo.
 
 ---
 
+## [1.3.0] - 2026-09-03
+
+### Nuevas caracteristicas
+
+- **Soporte de Jump Host SSH (conexion a Tailscale sin cliente instalado)**:
+  - Se agregaron los campos opcionales `jump_host` y `jump_user` a cada perfil
+    de maquina SSH en `config.json`.
+  - Cuando `jump_host` esta definido, la conexion se realiza en dos saltos:
+    el cliente conecta primero al basti\u00f3n (que tiene Tailscale instalado) y
+    a trav\u00e9s de el alcanza el nodo destino en la red privada (`100.x.x.x`).
+    Esto permite hacer backups a servidores Tailscale sin necesidad de
+    instalar ni configurar el cliente de Tailscale en la maquina de origen.
+  - Implementado usando `paramiko.ProxyCommand` con la directiva nativa
+    `ssh -W <host>:<port>`, lo que no requiere dependencias adicionales.
+  - La ventana de configuracion muestra una nueva seccion "JUMP HOST" con
+    los campos JUMP HOST y JUMP USER debajo de los datos del servidor.
+  - La tarjeta de servidor en la pantalla principal muestra un badge
+    "VIA JUMP HOST: ..." en amarillo cuando el salto esta configurado.
+  - El boton "Probar conexion" tambien utiliza el Jump Host al verificar.
+  - El log de conexion indica el Jump Host cuando esta activo.
+  - Retrocompatible: los `config.json` existentes se migran automaticamente
+    con `jump_host: ""` y `jump_user: ""` sin necesidad de intervencion.
+
+---
+
 ## [1.2.0] - 2026-08-10
 
 ### Nuevas caracteristicas
+
 
 - **Sincronizacion de backups entre maquinas (portabilidad)**:
   - Al conectarse al servidor SSH, el programa consulta automaticamente el
