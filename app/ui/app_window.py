@@ -11,7 +11,7 @@ from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk, filedialog
 from typing import Optional
 
-from .styles import C, F, apply_ttk_style
+from .styles import C, F, apply_ttk_style, theme
 from .file_selector import FileSelector, _fmt_size
 from .progress_panel import ProgressPanel
 
@@ -88,6 +88,12 @@ class AppWindow:
 
         # Estilo ttk
         self._style = ttk.Style()
+
+        # Inicializar tema desde config (antes de apply_ttk_style)
+        saved_theme = self._cfg.get("theme", "auto")
+        theme.set_mode(saved_theme)
+        theme.register_callback(self._apply_theme)
+
         apply_ttk_style(self._style)
 
         # Construir la UI
@@ -225,6 +231,24 @@ class AppWindow:
             activebackground=C["bg3"],
             activeforeground=C["fg"],
         ).pack(side="left")
+
+        # Botón toggle tema ☀️/🌙
+        self._btn_theme = tk.Button(
+            conn_frame,
+            text="☀" if theme.is_dark() else "🌙",
+            command=self._toggle_theme,
+            bg=C["bg4"],
+            fg=C["fg2"],
+            font=("Courier New", 11),
+            relief="flat",
+            bd=0,
+            padx=8,
+            pady=3,
+            cursor="hand2",
+            activebackground=C["bg3"],
+            activeforeground=C["fg"],
+        )
+        self._btn_theme.pack(side="left", padx=(4, 0))
 
     def _build_body(self) -> None:
         """Cuerpo principal: dos columnas + panel inferior."""
@@ -1559,6 +1583,42 @@ class AppWindow:
             padx=16, pady=6, cursor="hand2", activebackground=C["red_hi"],
         ).pack(side="right")
 
+        # ── Selector de tema ───────────────────────────────────
+        tk.Frame(dlg, bg=C["border"], height=1).pack(fill="x")
+        theme_bar = tk.Frame(dlg, bg=C["bg2"], padx=18, pady=10)
+        theme_bar.pack(fill="x")
+
+        tk.Label(
+            theme_bar, text="◈ TEMA:",
+            bg=C["bg2"], fg=C["red"], font=F["sm"],
+        ).pack(side="left", padx=(0, 10))
+
+        _THEME_OPTIONS = {
+            "auto":  "Automático (sistema)",
+            "dark":  "Oscuro",
+            "light": "Claro",
+        }
+        _theme_var = tk.StringVar(value=_THEME_OPTIONS.get(theme.get_mode(), "Automático (sistema)"))
+
+        theme_combo = ttk.Combobox(
+            theme_bar,
+            textvariable=_theme_var,
+            values=list(_THEME_OPTIONS.values()),
+            state="readonly",
+            font=F["base"],
+            width=20,
+        )
+        theme_combo.pack(side="left")
+
+        def _on_theme_change(_evt=None) -> None:
+            label = _theme_var.get()
+            key = next((k for k, v in _THEME_OPTIONS.items() if v == label), "auto")
+            theme.set_mode(key)
+            self._cfg["theme"] = key
+            cfg_module.save_config(self._cfg)
+
+        theme_combo.bind("<<ComboboxSelected>>", _on_theme_change)
+
         dlg.bind("<Return>", lambda _: _save())
         dlg.bind("<Escape>", lambda _: dlg.destroy())
 
@@ -1595,6 +1655,98 @@ class AppWindow:
         if hasattr(self, "_srv_jump_lbl"):
             jh = machine.get("jump_host", "")
             self._srv_jump_lbl.configure(text=f"⇶ VIA JUMP HOST: {jh}" if jh else "")
+
+    # ────────────────────────────────────────────────────────
+    # Toggle y cambio de tema en tiempo real
+    # ────────────────────────────────────────────────────────
+
+    def _toggle_theme(self) -> None:
+        """Alterna entre modo oscuro y modo claro."""
+        from .styles import ThemeManager
+        new_mode = ThemeManager.LIGHT if theme.is_dark() else ThemeManager.DARK
+        theme.set_mode(new_mode)
+        self._cfg["theme"] = new_mode
+        cfg_module.save_config(self._cfg)
+
+    def _apply_theme(self) -> None:
+        """Reconfigura toda la UI con la paleta activa.
+        Llamado automáticamente por ThemeManager al cambiar de tema."""
+        new_p = C                         # paleta nueva (ya actualizada en C)
+        old_p = theme.prev_palette()      # paleta que tenían los widgets
+
+        # Mapa inverso: hex_lower → clave de paleta (basado en la paleta ANTERIOR)
+        rev: dict[str, str] = {}
+        for key, val in old_p.items():
+            rev[val.lower()] = key
+
+        # Re-aplicar estilos ttk
+        apply_ttk_style(self._style)
+
+        # Recolorar toda la ventana recursivamente
+        self._recolor_recursive(self._root, new_p, rev)
+
+        # Actualizar icóno del botón de toggle (no puede inferirse por color)
+        if hasattr(self, "_btn_theme"):
+            self._btn_theme.configure(text="☀" if theme.is_dark() else "🌙")
+
+    def _recolor_recursive(self, widget, p: dict, rev: dict) -> None:
+        """Recorre el árbol de widgets y aplica la paleta `p` usando el mapa
+        inverso `rev` (antiguo_hex → clave_de_paleta)."""
+
+        def remap(color: str) -> str | None:
+            """Devuelve el color equivalente en `p`, o None si no es de paleta."""
+            if not color:
+                return None
+            key = rev.get(color.lower())
+            return p.get(key) if key else None
+
+        cls = widget.__class__.__name__
+
+        if cls == "Frame":
+            try:
+                new = remap(widget.cget("bg"))
+                if new:
+                    widget.configure(bg=new)
+            except Exception:
+                pass
+
+        elif cls == "Label":
+            try:
+                new_bg = remap(widget.cget("bg"))
+                if new_bg:
+                    widget.configure(bg=new_bg)
+            except Exception:
+                pass
+            try:
+                new_fg = remap(widget.cget("fg"))
+                if new_fg:
+                    widget.configure(fg=new_fg)
+            except Exception:
+                pass
+
+        elif cls == "Button":
+            for opt in ("bg", "fg", "activebackground", "activeforeground", "disabledforeground"):
+                try:
+                    new = remap(widget.cget(opt))
+                    if new:
+                        widget.configure(**{opt: new})
+                except Exception:
+                    pass
+
+        elif cls == "Canvas":
+            try:
+                new_bg = remap(widget.cget("bg"))
+                if new_bg:
+                    widget.configure(bg=new_bg)
+            except Exception:
+                pass
+
+        # Recursión en hijos
+        try:
+            for child in widget.winfo_children():
+                self._recolor_recursive(child, p, rev)
+        except Exception:
+            pass
 
     # ──────────────────────────────────────────────────────────
     # Splash Screen (Banner de inicio)
@@ -1686,6 +1838,7 @@ class AppWindow:
         self._root.deiconify()
         self._root.lift()
         self._root.focus_force()
+
 
     # ──────────────────────────────────────────────────────────
     # Ejecutar

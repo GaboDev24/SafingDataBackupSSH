@@ -34,6 +34,8 @@ DEFAULT_CONFIG: dict = {
     "active_machine": "Servidor Principal",
     "selected_paths": [],
     "first_run": True,
+    # Tema de la interfaz: "auto" (detecta el sistema), "dark" o "light"
+    "theme": "auto",
 }
 
 
@@ -58,6 +60,8 @@ def _migrate_old_format(data: dict) -> dict:
         for m in data["machines"]:
             m.setdefault("jump_host", "")
             m.setdefault("jump_user", "")
+    # Migración: añadir clave "theme" si no existe
+    data.setdefault("theme", DEFAULT_CONFIG["theme"])
     return data
 
 

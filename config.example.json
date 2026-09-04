@@ -23,5 +23,7 @@
   ],
   "active_machine": "Servidor Principal",
   "selected_paths": [],
-  "first_run": true
+  "first_run": true,
+  "_comment_theme": "Tema de la interfaz: 'auto' (detecta el sistema), 'dark' o 'light'",
+  "theme": "auto"
 }
