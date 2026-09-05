@@ -203,7 +203,7 @@ class AppWindow:
             text="CONECTAR",
             command=self._toggle_connection,
             bg=C["red"],
-            fg=C["fg"],
+            fg="#FFFFFF",
             font=F["sm"],
             relief="flat",
             bd=0,
@@ -211,7 +211,7 @@ class AppWindow:
             pady=4,
             cursor="hand2",
             activebackground=C["red_hi"],
-            activeforeground=C["fg"],
+            activeforeground="#FFFFFF",
         )
         self._btn_conn.pack(side="left", padx=(0, 8))
 
@@ -485,7 +485,7 @@ class AppWindow:
             text="▶  INICIAR BACKUP COMPLETO",
             command=self._start_backup,
             bg=C["red"],
-            fg=C["fg"],
+            fg="#FFFFFF",
             font=F["md"],
             relief="flat",
             bd=0,
@@ -493,7 +493,7 @@ class AppWindow:
             pady=10,
             cursor="hand2",
             activebackground=C["red_hi"],
-            activeforeground=C["fg"],
+            activeforeground="#FFFFFF",
             disabledforeground=C["fg3"],
             state="disabled",
         )
@@ -771,8 +771,9 @@ class AppWindow:
             self._conn_dot.itemconfigure("dot", fill=C["fg3"])
             self._conn_lbl.configure(text="DESCONECTADO", fg=C["fg3"])
             self._btn_conn.configure(text="CONECTAR", state="normal",
-                                     bg=C["red"], fg=C["fg"],
-                                     activebackground=C["red_hi"])
+                                     bg=C["red"], fg="#FFFFFF",
+                                     activebackground=C["red_hi"],
+                                     activeforeground="#FFFFFF")
             self._btn_backup.configure(state="disabled")
             self._footer_status.configure(text="offline", fg=C["fg3"])
             self._pulse_canvas.itemconfigure("dot", fill=C["fg3"])
@@ -1579,8 +1580,9 @@ class AppWindow:
 
         tk.Button(
             btn_row, text="GUARDAR", command=_save,
-            bg=C["red"], fg=C["fg"], font=F["md"], relief="flat", bd=0,
+            bg=C["red"], fg="#FFFFFF", font=F["md"], relief="flat", bd=0,
             padx=16, pady=6, cursor="hand2", activebackground=C["red_hi"],
+            activeforeground="#FFFFFF",
         ).pack(side="right")
 
         # ── Selector de tema ───────────────────────────────────

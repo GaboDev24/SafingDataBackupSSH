@@ -223,13 +223,13 @@ def _configure_ttk(style, p: dict) -> None:
     # Buttons
     style.configure(
         "Red.TButton",
-        background=p["red"], foreground=p["fg"], font=F["md"],
+        background=p["red"], foreground="#FFFFFF", font=F["md"],
         borderwidth=0, focuscolor=p["red"], relief="flat",
     )
     style.map(
         "Red.TButton",
         background=[("active", p["red_hi"]), ("disabled", p["red_dim"])],
-        foreground=[("disabled", p["fg3"])],
+        foreground=[("active", "#FFFFFF"), ("disabled", p["fg3"])],
     )
     style.configure(
         "Ghost.TButton",

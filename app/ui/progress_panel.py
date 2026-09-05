@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
-from .styles import C, F
+from .styles import C, F, theme
 
 
 class ProgressPanel(ttk.Frame):
@@ -71,11 +71,11 @@ class ProgressPanel(ttk.Frame):
         self._file_lbl.pack(fill="x", pady=(0, 8))
 
         # ── Log de texto tipo terminal ─────────────────────────
-        log_outer = tk.Frame(self, bg=C["bg_input"], highlightbackground=C["border"], highlightthickness=1)
-        log_outer.pack(fill="both", expand=True)
+        self._log_outer = tk.Frame(self, bg=C["bg_input"], highlightbackground=C["border"], highlightthickness=1)
+        self._log_outer.pack(fill="both", expand=True)
 
         self._log_text = tk.Text(
-            log_outer,
+            self._log_outer,
             bg=C["bg_input"],
             fg=C["fg"],
             font=F["mono"],
@@ -90,13 +90,48 @@ class ProgressPanel(ttk.Frame):
             cursor="arrow",
         )
 
-        scroll = ttk.Scrollbar(log_outer, command=self._log_text.yview)
+        scroll = ttk.Scrollbar(self._log_outer, command=self._log_text.yview)
         self._log_text.configure(yscrollcommand=scroll.set)
 
         scroll.pack(side="right", fill="y")
         self._log_text.pack(side="left", fill="both", expand=True)
 
         # Tags de color para el log
+        self._log_text.tag_configure("info",    foreground=C["fg2"])
+        self._log_text.tag_configure("success", foreground=C["green"])
+        self._log_text.tag_configure("error",   foreground=C["danger"])
+        self._log_text.tag_configure("warning", foreground=C["yellow"])
+        self._log_text.tag_configure("cmd",     foreground=C["red"])
+        self._log_text.tag_configure("ts",      foreground=C["fg3"])
+
+        # Aplicar colores del tema activo y registrar callback
+        self.apply_theme()
+        theme.register_callback(self.apply_theme)
+
+    # ──────────────────────────────────────────────────────────
+    # Tema
+    # ──────────────────────────────────────────────────────────
+
+    def apply_theme(self) -> None:
+        """Re-aplica la paleta activa al widget Text y sus tags."""
+        bg = C["bg_input"]
+        fg = C["fg"]
+        border = C["border"]
+
+        # Marco exterior del log
+        try:
+            self._log_outer.configure(bg=bg, highlightbackground=border)
+        except Exception:
+            pass
+
+        # Widget de texto
+        self._log_text.configure(
+            bg=bg,
+            fg=fg,
+            insertbackground=C["red"],
+        )
+
+        # Tags de colores
         self._log_text.tag_configure("info",    foreground=C["fg2"])
         self._log_text.tag_configure("success", foreground=C["green"])
         self._log_text.tag_configure("error",   foreground=C["danger"])
