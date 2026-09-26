@@ -61,6 +61,11 @@ class AppWindow:
         self._disk_info: dict = {"total": 0, "used": 0, "free": 0}
         self._remote_base_abs: str = ""
 
+        # Inicializar tema desde config (antes de apply_ttk_style)
+        saved_theme = self._cfg.get("theme", "auto")
+        theme.set_mode(saved_theme)
+        theme.register_callback(self._apply_theme)
+
         self._root = tk.Tk()
         self._root.title("SafingData — Backup SSH Portable")
         self._root.configure(bg=C["bg"])
@@ -88,12 +93,6 @@ class AppWindow:
 
         # Estilo ttk
         self._style = ttk.Style()
-
-        # Inicializar tema desde config (antes de apply_ttk_style)
-        saved_theme = self._cfg.get("theme", "auto")
-        theme.set_mode(saved_theme)
-        theme.register_callback(self._apply_theme)
-
         apply_ttk_style(self._style)
 
         # Construir la UI
@@ -1704,7 +1703,7 @@ class AppWindow:
 
         cls = widget.__class__.__name__
 
-        if cls == "Frame":
+        if isinstance(widget, (tk.Frame, tk.Tk, tk.Toplevel)):
             try:
                 new = remap(widget.cget("bg"))
                 if new:
@@ -1712,7 +1711,7 @@ class AppWindow:
             except Exception:
                 pass
 
-        elif cls == "Label":
+        elif isinstance(widget, tk.Label):
             try:
                 new_bg = remap(widget.cget("bg"))
                 if new_bg:
@@ -1726,7 +1725,7 @@ class AppWindow:
             except Exception:
                 pass
 
-        elif cls == "Button":
+        elif isinstance(widget, tk.Button):
             for opt in ("bg", "fg", "activebackground", "activeforeground", "disabledforeground"):
                 try:
                     new = remap(widget.cget(opt))
@@ -1735,7 +1734,7 @@ class AppWindow:
                 except Exception:
                     pass
 
-        elif cls == "Canvas":
+        elif isinstance(widget, tk.Canvas):
             try:
                 new_bg = remap(widget.cget("bg"))
                 if new_bg:
