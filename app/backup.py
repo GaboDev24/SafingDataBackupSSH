@@ -78,7 +78,7 @@ class SSHBackupClient:
         # Para máxima seguridad en entornos de producción, usa RejectPolicy y
         # carga las claves del servidor con load_host_keys() antes de conectar.
         self._client.load_system_host_keys()
-        self._client.set_missing_host_key_policy(paramiko.WarningPolicy())
+        self._client.set_missing_host_key_policy(paramiko.RejectPolicy())
         self._client.connect(
             host,
             port=port,

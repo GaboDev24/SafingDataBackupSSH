@@ -27,10 +27,10 @@ LIBS_DIR = BASE_DIR / "libs"
 # con prioridad máxima. Asegúrate de que el pendrive/directorio provenga
 # de una fuente de confianza y no haya sido modificado por terceros.
 if LIBS_DIR.exists():
-    sys.path.insert(0, str(LIBS_DIR))
+    sys.path.append(str(LIBS_DIR))
 
 # Añadir el directorio raíz del proyecto
-sys.path.insert(0, str(BASE_DIR))
+sys.path.append(str(BASE_DIR))
 
 
 # ────────────────────────────────────────────────────────────

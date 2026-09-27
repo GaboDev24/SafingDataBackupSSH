@@ -61,6 +61,9 @@ def check_quota(
     Regla: disponible = total - 20 GB (reserva sistema) - usado
     Retorna: (ok, available_bytes, message)
     """
+    if remote_total_bytes == 0:
+        return True, 0, "No se pudo determinar el espacio remoto. Procediendo..."
+
     reserve = SYSTEM_RESERVE_GB * BYTES_PER_GB
     available = remote_total_bytes - reserve - remote_used_bytes
 
